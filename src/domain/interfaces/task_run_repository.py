@@ -27,4 +27,11 @@ class TaskRunRepository(ABC):
     ) -> None: ...
 
     @abstractmethod
-    async def fail(self, task_run_id: uuid.UUID, error_message: str, finished_at: datetime) -> None: ...
+    async def fail(
+        self,
+        task_run_id: uuid.UUID,
+        error_message: str,
+        finished_at: datetime,
+        *,
+        retry_count: int = 0,
+    ) -> None: ...

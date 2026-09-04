@@ -45,9 +45,23 @@ class BrowserEngine:
 
     def __init__(self, max_concurrent: int = DEFAULT_MAX_CONCURRENT_BROWSERS, headless: bool = True) -> None:
         self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._current_concurrency = max_concurrent
         self._headless = headless
         self._playwright = None
         self._browser = None
+
+    def set_concurrency(self, max_concurrent: int) -> None:
+        """Phase 4 (§5.2, §5.6): swaps in a brand-new Semaphore(N). Sessions
+        already running hold a reference to the OLD semaphore (captured when
+        their `async with self._semaphore:` block was entered) and finish
+        under the old cap undisturbed; only sessions that start *after* this
+        call acquire the new one — exactly the "next batch" semantics
+        `asyncio.Semaphore` can't give you via live resizing."""
+        if max_concurrent == self._current_concurrency:
+            return
+        self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._current_concurrency = max_concurrent
+        logger.info("browser_engine_concurrency_changed", max_concurrent=max_concurrent)
 
     async def start(self) -> None:
         self._playwright = await async_playwright().start()

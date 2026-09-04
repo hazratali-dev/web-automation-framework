@@ -69,6 +69,7 @@ class SqlAlchemyTaskRunRepository(TaskRunRepository):
         row.duration_ms = task_run.duration_ms
         row.result = task_run.result
         row.screenshot_path = task_run.screenshot_path
+        row.retry_count = task_run.retry_count
 
         for session in sessions:
             self._session.add(
@@ -94,12 +95,19 @@ class SqlAlchemyTaskRunRepository(TaskRunRepository):
 
         await self._session.commit()
 
-    async def fail(self, task_run_id: uuid.UUID, error_message: str, finished_at: datetime) -> None:
+    async def fail(
+        self,
+        task_run_id: uuid.UUID,
+        error_message: str,
+        finished_at: datetime,
+        *,
+        retry_count: int = 0,
+    ) -> None:
         row = await self._session.get(TaskRunModel, task_run_id)
         if row is None:
             raise ValueError(f"TaskRun {task_run_id} not found")
         row.status = "failed"
         row.error_message = error_message
         row.finished_at = finished_at
-        row.retry_count += 1
+        row.retry_count = retry_count
         await self._session.commit()

@@ -14,6 +14,17 @@ class TaskRepository(ABC):
     @abstractmethod
     async def get_by_target_and_type(self, target_id: uuid.UUID, task_type: str) -> Task | None: ...
 
+    @abstractmethod
+    async def list_scheduled(self) -> list[Task]:
+        """Active tasks that have a `schedule_cron` set — what the Scheduler
+        (§5.3) needs to (re)sync its job list against."""
+        ...
+
+    @abstractmethod
+    async def update_status(self, task_id: uuid.UUID, status: str) -> None:
+        """active / paused / archived — §5.3 pause/resume."""
+        ...
+
     async def get_or_create(self, task: Task) -> Task:
         existing = await self.get_by_target_and_type(task.target_id, task.task_type)
         if existing is not None:

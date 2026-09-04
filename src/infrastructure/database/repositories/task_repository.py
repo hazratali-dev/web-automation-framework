@@ -1,11 +1,15 @@
 import uuid
 
+import structlog
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.domain.entities.task import Task
 from src.domain.interfaces.task_repository import TaskRepository
 from src.infrastructure.database.models.task import Task as TaskModel
+
+logger = structlog.get_logger(__name__)
 
 
 def _to_entity(row: TaskModel) -> Task:
@@ -46,5 +50,35 @@ class SqlAlchemyTaskRepository(TaskRepository):
         result = await self._session.execute(
             select(TaskModel).where(TaskModel.target_id == target_id, TaskModel.task_type == task_type)
         )
-        row = result.scalar_one_or_none()
+        row = result.scalars().first()
         return _to_entity(row) if row else None
+
+    async def get_or_create(self, task: Task) -> Task:
+        """See SqlAlchemyTargetRepository.get_or_create — same concurrent
+        visitor-batch race, resolved the same way via the
+        (target_id, task_type) unique constraint."""
+        existing = await self.get_by_target_and_type(task.target_id, task.task_type)
+        if existing is not None:
+            return existing
+        try:
+            return await self.add(task)
+        except IntegrityError:
+            await self._session.rollback()
+            logger.info("task_get_or_create_race_resolved", target_id=str(task.target_id), task_type=task.task_type)
+            existing = await self.get_by_target_and_type(task.target_id, task.task_type)
+            if existing is None:
+                raise
+            return existing
+
+    async def list_scheduled(self) -> list[Task]:
+        result = await self._session.execute(
+            select(TaskModel).where(TaskModel.status == "active", TaskModel.schedule_cron.is_not(None))
+        )
+        return [_to_entity(r) for r in result.scalars().all()]
+
+    async def update_status(self, task_id: uuid.UUID, status: str) -> None:
+        row = await self._session.get(TaskModel, task_id)
+        if row is None:
+            raise ValueError(f"Task {task_id} not found")
+        row.status = status
+        await self._session.commit()

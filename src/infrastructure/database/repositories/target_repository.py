@@ -1,11 +1,15 @@
 import uuid
 
+import structlog
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.domain.entities.target import Target
 from src.domain.interfaces.target_repository import TargetRepository
 from src.infrastructure.database.models.target import Target as TargetModel
+
+logger = structlog.get_logger(__name__)
 
 
 def _to_entity(row: TargetModel) -> Target:
@@ -44,5 +48,24 @@ class SqlAlchemyTargetRepository(TargetRepository):
 
     async def get_by_base_url(self, base_url: str) -> Target | None:
         result = await self._session.execute(select(TargetModel).where(TargetModel.base_url == base_url))
-        row = result.scalar_one_or_none()
+        row = result.scalars().first()
         return _to_entity(row) if row else None
+
+    async def get_or_create(self, target: Target) -> Target:
+        """Overrides the ABC's naive check-then-act default: concurrent
+        visitor-batch sessions (§Phase 4) can race here, both seeing "not
+        found" and both trying to insert. The `base_url` unique constraint
+        turns the loser's insert into an IntegrityError instead of a silent
+        duplicate row — we catch that and just fetch what the winner created."""
+        existing = await self.get_by_base_url(target.base_url)
+        if existing is not None:
+            return existing
+        try:
+            return await self.add(target)
+        except IntegrityError:
+            await self._session.rollback()
+            logger.info("target_get_or_create_race_resolved", base_url=target.base_url)
+            existing = await self.get_by_base_url(target.base_url)
+            if existing is None:
+                raise
+            return existing
