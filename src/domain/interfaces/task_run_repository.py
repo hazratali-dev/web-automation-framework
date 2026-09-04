@@ -35,3 +35,8 @@ class TaskRunRepository(ABC):
         *,
         retry_count: int = 0,
     ) -> None: ...
+
+    @abstractmethod
+    async def list_for_task(self, task_id: uuid.UUID, *, limit: int = 20, offset: int = 0) -> list[TaskRun]:
+        """§5.5 — run history, newest first, paginated."""
+        ...

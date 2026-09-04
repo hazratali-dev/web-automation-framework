@@ -1,5 +1,6 @@
 import asyncio
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.domain.interfaces.runtime_config_port import RuntimeConfigPort
@@ -69,3 +70,9 @@ class DbRuntimeConfigService(RuntimeConfigPort):
         # Write-through: DB commit above, then cache — never the other way
         # round, so a reader can never observe the cache ahead of the DB.
         await self._cache.set(key, value)
+
+    async def list_all(self) -> dict[str, str]:
+        # Always DB-sourced (not the cache) — the cache is a lazy per-key
+        # store, it doesn't reliably know the *full* set of keys that exist.
+        result = await self._session.execute(select(RuntimeConfigModel))
+        return {row.key: row.value for row in result.scalars().all()}

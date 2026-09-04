@@ -15,3 +15,8 @@ class RuntimeConfigPort(ABC):
 
     @abstractmethod
     async def set(self, key: str, value: str) -> None: ...
+
+    @abstractmethod
+    async def list_all(self) -> dict[str, str]:
+        """§5.5 — GET /api/config: every key/value currently in `runtime_config`."""
+        ...

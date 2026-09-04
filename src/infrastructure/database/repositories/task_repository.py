@@ -82,3 +82,10 @@ class SqlAlchemyTaskRepository(TaskRepository):
             raise ValueError(f"Task {task_id} not found")
         row.status = status
         await self._session.commit()
+
+    async def list_all(self, target_id: uuid.UUID | None = None) -> list[Task]:
+        query = select(TaskModel)
+        if target_id is not None:
+            query = query.where(TaskModel.target_id == target_id)
+        result = await self._session.execute(query)
+        return [_to_entity(r) for r in result.scalars().all()]

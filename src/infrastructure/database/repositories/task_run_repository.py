@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.domain.entities.metric import Metric
@@ -111,3 +112,13 @@ class SqlAlchemyTaskRunRepository(TaskRunRepository):
         row.finished_at = finished_at
         row.retry_count = retry_count
         await self._session.commit()
+
+    async def list_for_task(self, task_id: uuid.UUID, *, limit: int = 20, offset: int = 0) -> list[TaskRun]:
+        result = await self._session.execute(
+            select(TaskRunModel)
+            .where(TaskRunModel.task_id == task_id)
+            .order_by(TaskRunModel.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return [_to_entity(r) for r in result.scalars().all()]

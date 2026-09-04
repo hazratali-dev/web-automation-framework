@@ -19,3 +19,6 @@ dist/
 *_err.log
 
 screenshots/
+
+node_modules/
+dashboard/dist/

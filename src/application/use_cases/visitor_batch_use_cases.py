@@ -5,6 +5,7 @@ import structlog
 
 from src.domain.entities.task_run import TaskRun
 from src.domain.interfaces.runtime_config_port import RuntimeConfigPort
+from src.domain.interfaces.status_store_port import StatusStorePort
 from src.infrastructure.browser.engine import BrowserEngine
 from src.infrastructure.config.runtime_config_service import DbRuntimeConfigService
 from src.infrastructure.database.repositories.proxy_repository import SqlAlchemyProxyRepository
@@ -34,10 +35,12 @@ class RunVisitorBatchUseCase:
         session_factory: Callable,
         *,
         circuit_registry: CircuitBreakerRegistry | None = None,
+        status_store: StatusStorePort | None = None,
     ) -> None:
         self._engine = engine
         self._session_factory = session_factory
         self._circuit_registry = circuit_registry or default_registry
+        self._status_store = status_store
 
     async def execute(
         self, *, url: str, total_visitors: int = DEFAULT_TOTAL_VISITORS, use_proxy: bool = False
@@ -87,5 +90,6 @@ class RunVisitorBatchUseCase:
                 task_run_repo=SqlAlchemyTaskRunRepository(session),
                 proxy_manager=proxy_manager,
                 circuit_registry=self._circuit_registry,
+                status_store=self._status_store,
             )
             return await use_case.execute(url=url, use_proxy=use_proxy, take_screenshot=False)

@@ -10,6 +10,7 @@ from src.domain.entities.session import BrowserSession
 from src.domain.entities.target import Target
 from src.domain.entities.task import Task
 from src.domain.entities.task_run import TaskRun
+from src.domain.interfaces.status_store_port import StatusStorePort
 from src.domain.interfaces.target_repository import TargetRepository
 from src.domain.interfaces.task_repository import TaskRepository
 from src.domain.interfaces.task_run_repository import TaskRunRepository
@@ -46,6 +47,7 @@ class RunBrowserSessionUseCase:
         proxy_manager: ProxyManager | None,
         *,
         circuit_registry: CircuitBreakerRegistry | None = None,
+        status_store: StatusStorePort | None = None,
         max_retries: int = 2,
         retry_base_delay: float = 1.0,
     ) -> None:
@@ -55,8 +57,24 @@ class RunBrowserSessionUseCase:
         self._task_run_repo = task_run_repo
         self._proxy_manager = proxy_manager
         self._circuit_registry = circuit_registry or default_registry
+        self._status_store = status_store
         self._max_retries = max_retries
         self._retry_base_delay = retry_base_delay
+
+    async def _push_status(self, task_run: TaskRun, task: Task) -> None:
+        """§5.5 — live status for the dashboard WebSocket. A no-op when no
+        status_store was wired in (e.g. Phase 3/4 CLI usage)."""
+        if self._status_store is None:
+            return
+        await self._status_store.set(
+            task_run.id,
+            {
+                "task_run_id": str(task_run.id),
+                "task_id": str(task.id),
+                "status": task_run.status,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
 
     async def execute(
         self,
@@ -89,7 +107,11 @@ class RunBrowserSessionUseCase:
             proxy = await self._proxy_manager.select_proxy_with_secret()
 
         task_run = await self._task_run_repo.create(TaskRun(task_id=task.id, proxy_id=proxy.id if proxy else None))
+        await self._push_status(task_run, task)
+
         await self._task_run_repo.mark_running(task_run.id, datetime.now(timezone.utc))
+        task_run.status = "running"
+        await self._push_status(task_run, task)
 
         # §Product-readiness — dashboard-managed credentials (never in code/.env).
         # Decrypted here, held only in this local variable, passed straight
@@ -113,6 +135,7 @@ class RunBrowserSessionUseCase:
             task_run.status = "failed"
             task_run.error_message = result.error
             task_run.finished_at = finished_at
+            await self._push_status(task_run, task)
             return task_run
 
         sessions = [
@@ -137,6 +160,7 @@ class RunBrowserSessionUseCase:
         task_run.screenshot_path = result.screenshot_path
 
         await self._task_run_repo.complete(task_run, sessions, metrics)
+        await self._push_status(task_run, task)
         return task_run
 
     @staticmethod
@@ -238,10 +262,13 @@ def make_task_execution_handler(
     engine: BrowserEngine,
     session_factory: Callable,
     circuit_registry: CircuitBreakerRegistry | None = None,
+    status_store: StatusStorePort | None = None,
 ) -> TaskHandler:
     """Wires a TaskRunnerPort.submit()-compatible handler (§5.3): given a
     task_id, open a fresh DB session, run it through RunBrowserSessionUseCase,
-    and log the outcome. This is what AsyncioTaskRunner's consumers call."""
+    and log the outcome. This is what AsyncioTaskRunner's consumers call —
+    both the Phase 4 scheduler and the Phase 5 `run-now`/`simulate-visitors`
+    API endpoints submit task_ids through the same task_runner."""
 
     async def handler(task_id: uuid.UUID) -> None:
         async with session_factory() as session:
@@ -253,6 +280,7 @@ def make_task_execution_handler(
                 task_run_repo=SqlAlchemyTaskRunRepository(session),
                 proxy_manager=proxy_manager,
                 circuit_registry=circuit_registry,
+                status_store=status_store,
             )
             task_run = await use_case.execute_for_task(task_id)
             logger.info("scheduled_task_executed", task_id=str(task_id), status=task_run.status)

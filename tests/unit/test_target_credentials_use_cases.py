@@ -29,6 +29,9 @@ class FakeTargetRepository(TargetRepository):
     async def get_by_base_url(self, base_url: str) -> Target | None:
         return next((t for t in self._targets.values() if t.base_url == base_url), None)
 
+    async def list_all(self) -> list[Target]:
+        return list(self._targets.values())
+
     async def update_config(self, target_id: uuid.UUID, config: dict) -> None:
         self._targets[target_id].config = config
 

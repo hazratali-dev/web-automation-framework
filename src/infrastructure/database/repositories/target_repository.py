@@ -51,6 +51,10 @@ class SqlAlchemyTargetRepository(TargetRepository):
         row = result.scalars().first()
         return _to_entity(row) if row else None
 
+    async def list_all(self) -> list[Target]:
+        result = await self._session.execute(select(TargetModel))
+        return [_to_entity(r) for r in result.scalars().all()]
+
     async def update_config(self, target_id: uuid.UUID, config: dict) -> None:
         row = await self._session.get(TargetModel, target_id)
         if row is None:

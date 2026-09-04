@@ -25,6 +25,11 @@ class TaskRepository(ABC):
         """active / paused / archived — §5.3 pause/resume."""
         ...
 
+    @abstractmethod
+    async def list_all(self, target_id: uuid.UUID | None = None) -> list[Task]:
+        """§5.5 — GET /api/tasks (task list view), optionally filtered to one target."""
+        ...
+
     async def get_or_create(self, task: Task) -> Task:
         existing = await self.get_by_target_and_type(task.target_id, task.task_type)
         if existing is not None:
