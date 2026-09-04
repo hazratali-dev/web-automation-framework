@@ -27,6 +27,22 @@ class TargetRepository(ABC):
         lives at the call site, not here."""
         ...
 
+    @abstractmethod
+    async def update_basic_info(
+        self,
+        target_id: uuid.UUID,
+        *,
+        name: str | None = None,
+        base_url: str | None = None,
+        target_type: str | None = None,
+    ) -> None:
+        """§UI-refactor — the Edit action in the Targets table. Only the
+        fields actually passed get changed."""
+        ...
+
+    @abstractmethod
+    async def delete(self, target_id: uuid.UUID) -> None: ...
+
     async def get_or_create(self, target: Target) -> Target:
         existing = await self.get_by_base_url(target.base_url)
         if existing is not None:

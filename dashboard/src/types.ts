@@ -68,3 +68,13 @@ export interface PreviewFrame {
   active: boolean;
   image?: string;
 }
+
+export interface RecentRun {
+  id: string;
+  task_id: string;
+  task_type: string;
+  target_name: string;
+  status: string;
+  started_at: string | null;
+  duration_ms: number | null;
+}

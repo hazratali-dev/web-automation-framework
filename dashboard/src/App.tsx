@@ -1,33 +1,22 @@
-import { useState } from "react";
-import "./App.css";
-import { LivePreview } from "./components/LivePreview";
-import { LiveStatus } from "./components/LiveStatus";
-import { ProxyList } from "./components/ProxyList";
-import { RuntimeConfigPanel } from "./components/RuntimeConfigPanel";
-import { TargetForm } from "./components/TargetForm";
-import { TargetList } from "./components/TargetList";
+import { Route, Routes } from "react-router-dom";
+import { Layout } from "./components/Layout";
+import { ConfigPage } from "./pages/ConfigPage";
+import { DashboardPage } from "./pages/DashboardPage";
+import { ProxiesPage } from "./pages/ProxiesPage";
+import { TargetsPage } from "./pages/TargetsPage";
+import { TasksPage } from "./pages/TasksPage";
 
 function App() {
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [previewTaskRunId, setPreviewTaskRunId] = useState<string | null>(null);
-
   return (
-    <div className="app">
-      <header className="app-header">
-        <h1>Web Automation Framework — Dashboard</h1>
-        <p className="muted">Phase 5 · SQLite + asyncio, single uvicorn process</p>
-      </header>
-
-      <LiveStatus onPreview={setPreviewTaskRunId} />
-      <TargetForm onCreated={() => setRefreshKey((k) => k + 1)} />
-      <TargetList refreshKey={refreshKey} />
-      <RuntimeConfigPanel />
-      <ProxyList />
-
-      {previewTaskRunId && (
-        <LivePreview taskRunId={previewTaskRunId} onClose={() => setPreviewTaskRunId(null)} />
-      )}
-    </div>
+    <Routes>
+      <Route element={<Layout />}>
+        <Route index element={<DashboardPage />} />
+        <Route path="targets" element={<TargetsPage />} />
+        <Route path="tasks" element={<TasksPage />} />
+        <Route path="proxies" element={<ProxiesPage />} />
+        <Route path="config" element={<ConfigPage />} />
+      </Route>
+    </Routes>
   );
 }
 

@@ -32,6 +32,18 @@ class FakeTargetRepository(TargetRepository):
     async def list_all(self) -> list[Target]:
         return list(self._targets.values())
 
+    async def update_basic_info(self, target_id, *, name=None, base_url=None, target_type=None) -> None:
+        target = self._targets[target_id]
+        if name is not None:
+            target.name = name
+        if base_url is not None:
+            target.base_url = base_url
+        if target_type is not None:
+            target.target_type = target_type
+
+    async def delete(self, target_id) -> None:
+        del self._targets[target_id]
+
     async def update_config(self, target_id: uuid.UUID, config: dict) -> None:
         self._targets[target_id].config = config
 

@@ -35,10 +35,16 @@ class TargetCreateRequest(BaseModel):
 
 
 class TargetConfigUpdateRequest(BaseModel):
-    """PATCH /api/targets/{id} — §5.5: viewport/headers/timeout only. Merged
-    into the existing config, never overwrites credentials_encrypted /
-    login_selectors (those have their own dedicated endpoints, §Product-readiness)."""
+    """PATCH /api/targets/{id} — §5.5 config (viewport/headers/timeout) plus
+    §UI-refactor basic-info edit (name/base_url/target_type). Config changes
+    merge into the existing config JSON, never overwriting
+    credentials_encrypted/login_selectors (those have their own dedicated
+    endpoints, §Product-readiness). All fields optional — only what's sent
+    gets changed."""
 
+    name: str | None = Field(None, min_length=1)
+    base_url: str | None = Field(None, min_length=1)
+    target_type: str | None = None
     viewport: dict | None = None
     headers: dict | None = None
     timeout_seconds: int | None = None

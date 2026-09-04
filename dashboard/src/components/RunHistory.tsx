@@ -1,80 +1,70 @@
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import { api } from "../api";
 import type { TaskRun } from "../types";
+import { Badge, statusVariant } from "./ui/Badge";
 
 export function RunHistory({ taskId }: { taskId: string }) {
   const [runs, setRuns] = useState<TaskRun[]>([]);
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  async function toggle() {
-    if (!open) {
-      setLoading(true);
-      try {
-        setRuns(await api.listTaskRuns(taskId));
-      } finally {
-        setLoading(false);
-      }
+  async function refresh() {
+    try {
+      setRuns(await api.listTaskRuns(taskId));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
     }
-    setOpen((o) => !o);
   }
 
-  // Keep it fresh while open, in case a run finishes while the user is looking.
   useEffect(() => {
-    if (!open) return;
-    const interval = window.setInterval(() => {
-      api.listTaskRuns(taskId).then(setRuns);
-    }, 4000);
+    refresh();
+    const interval = window.setInterval(refresh, 4000);
     return () => window.clearInterval(interval);
-  }, [open, taskId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskId]);
+
+  if (loading) return <p className="p-4 text-sm text-slate-500">Loading…</p>;
+  if (runs.length === 0) return <p className="p-4 text-sm text-slate-500">No runs yet.</p>;
 
   return (
-    <div className="run-history">
-      <button type="button" className="link-button" onClick={toggle}>
-        {open ? "Hide Run History" : "Show Run History"}
-      </button>
-
-      {open && (
-        <>
-          {loading && <p className="muted">Loading…</p>}
-          {!loading && runs.length === 0 && <p className="muted">No runs yet.</p>}
-          {!loading && runs.length > 0 && (
-            <table className="run-history-table">
-              <thead>
-                <tr>
-                  <th>Status</th>
-                  <th>Started</th>
-                  <th>Duration</th>
-                  <th>Retries</th>
-                  <th>Metrics / Error</th>
-                </tr>
-              </thead>
-              <tbody>
-                {runs.map((run) => (
-                  <tr key={run.id}>
-                    <td>
-                      <span className={`badge badge-run-${run.status}`}>{run.status}</span>
-                    </td>
-                    <td>{run.started_at ? new Date(run.started_at).toLocaleTimeString() : "—"}</td>
-                    <td>{run.duration_ms != null ? `${run.duration_ms}ms` : "—"}</td>
-                    <td>{run.retry_count}</td>
-                    <td className="run-history-detail">
-                      {run.error_message
-                        ? run.error_message
-                        : run.result
-                          ? Object.entries(run.result)
-                              .filter(([, v]) => v != null)
-                              .map(([k, v]) => `${k}=${Math.round(v as number)}`)
-                              .join(", ")
-                          : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </>
-      )}
+    <div className="overflow-x-auto bg-slate-50 p-3">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-left uppercase tracking-wide text-slate-400">
+            <th className="py-1.5 pr-3">Status</th>
+            <th className="py-1.5 pr-3">Started</th>
+            <th className="py-1.5 pr-3">Duration</th>
+            <th className="py-1.5 pr-3">Retries</th>
+            <th className="py-1.5 pr-3">Metrics / Error</th>
+          </tr>
+        </thead>
+        <tbody>
+          {runs.map((run) => (
+            <tr key={run.id} className="border-t border-slate-200">
+              <td className="py-1.5 pr-3">
+                <Badge variant={statusVariant(run.status)}>{run.status}</Badge>
+              </td>
+              <td className="py-1.5 pr-3 text-slate-500">
+                {run.started_at ? new Date(run.started_at).toLocaleTimeString() : "—"}
+              </td>
+              <td className="py-1.5 pr-3 text-slate-500">{run.duration_ms != null ? `${run.duration_ms}ms` : "—"}</td>
+              <td className="py-1.5 pr-3 text-slate-500">{run.retry_count}</td>
+              <td className="max-w-xs truncate py-1.5 pr-3 text-slate-500">
+                {run.error_message
+                  ? run.error_message
+                  : run.result
+                    ? Object.entries(run.result)
+                        .filter(([, v]) => v != null)
+                        .map(([k, v]) => `${k}=${Math.round(v as number)}`)
+                        .join(", ")
+                    : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

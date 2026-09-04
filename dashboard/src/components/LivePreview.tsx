@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { previewWebSocketUrl } from "../api";
+import { Modal } from "./ui/Modal";
 
 export function LivePreview({ taskRunId, onClose }: { taskRunId: string; onClose: () => void }) {
   const [image, setImage] = useState<string | null>(null);
@@ -20,24 +21,15 @@ export function LivePreview({ taskRunId, onClose }: { taskRunId: string; onClose
   }, [taskRunId]);
 
   return (
-    <div className="live-preview-overlay" onClick={onClose}>
-      <div className="live-preview-panel" onClick={(e) => e.stopPropagation()}>
-        <div className="live-preview-header">
-          <strong>Live Preview</strong>
-          <span className="muted"> — {taskRunId.slice(0, 8)}… (updates every ~3s)</span>
-          <button type="button" className="link-button" onClick={onClose}>
-            Close
-          </button>
-        </div>
-        <div className="live-preview-body">
-          {image ? (
-            <img src={image} alt="Live browser preview" className="live-preview-image" />
-          ) : (
-            <p className="muted">Waiting for the first frame…</p>
-          )}
-          {!active && <p className="hint">This session has finished — showing its last frame.</p>}
-        </div>
-      </div>
-    </div>
+    <Modal title={`Live Preview — ${taskRunId.slice(0, 8)}… (updates every ~3s)`} onClose={onClose} wide>
+      {image ? (
+        <img src={image} alt="Live browser preview" className="w-full rounded-md border border-slate-200" />
+      ) : (
+        <p className="py-12 text-center text-sm text-slate-500">Waiting for the first frame…</p>
+      )}
+      {!active && (
+        <p className="mt-3 text-sm text-emerald-600">This session has finished — showing its last frame.</p>
+      )}
+    </Modal>
   );
 }
