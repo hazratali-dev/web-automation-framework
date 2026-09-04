@@ -8,6 +8,7 @@ import structlog
 from playwright.async_api import async_playwright
 
 from src.domain.entities.proxy import Proxy
+from src.infrastructure.browser.auto_login import auto_login
 from src.infrastructure.browser.behaviors.scroll import human_scroll, think_time
 from src.infrastructure.browser.fingerprint import Fingerprint, random_fingerprint
 from src.infrastructure.browser.metrics import install_metrics_observer, read_performance_metrics
@@ -87,14 +88,22 @@ class BrowserEngine:
         url: str,
         *,
         proxy: Proxy | None = None,
+        credentials: dict | None = None,
+        login_selectors: dict | None = None,
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         take_screenshot: bool = True,
         screenshot_dir: str = "screenshots",
     ) -> BrowserRunResult:
         """Lifecycle (§5.2): semaphore acquire -> context create -> navigate
-        (human-like) -> metrics capture -> screenshot -> context close ->
-        semaphore release. Never raises — failures come back as a result with
-        success=False so the caller can persist a structured error (§5.2)."""
+        (human-like) -> auto-login if credentials given -> metrics capture ->
+        screenshot -> context close -> semaphore release. Never raises —
+        failures come back as a result with success=False so the caller can
+        persist a structured error (§5.2).
+
+        `credentials` (already-decrypted {"email", "password"}) and
+        `login_selectors` come from the caller (§Product-readiness) — this
+        method never touches the database itself, and never logs either
+        dict's contents."""
         if self._browser is None:
             raise RuntimeError("BrowserEngine.start() must be called before run_session()")
 
@@ -119,6 +128,11 @@ class BrowserEngine:
                 page = await context.new_page()
                 await think_time(0.3, 1.0)
                 await page.goto(url, timeout=timeout_seconds * 1000, wait_until="load")
+
+                if credentials is not None:
+                    await think_time(0.3, 0.8)
+                    await auto_login(page, credentials, login_selectors)
+
                 await human_scroll(page)
                 await think_time(0.3, 1.0)
 

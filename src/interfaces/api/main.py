@@ -5,7 +5,7 @@ from fastapi import FastAPI
 
 from src.config.settings import get_settings
 from src.infrastructure.monitoring.logging_setup import configure_logging
-from src.interfaces.api.routers import health
+from src.interfaces.api.routers import health, targets
 
 settings = get_settings()
 configure_logging(settings.app_env, settings.log_level)
@@ -27,3 +27,4 @@ app = FastAPI(
 )
 
 app.include_router(health.router)
+app.include_router(targets.router)

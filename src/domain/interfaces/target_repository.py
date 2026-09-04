@@ -14,6 +14,14 @@ class TargetRepository(ABC):
     @abstractmethod
     async def get_by_base_url(self, base_url: str) -> Target | None: ...
 
+    @abstractmethod
+    async def update_config(self, target_id: uuid.UUID, config: dict) -> None:
+        """Replaces the whole `config` JSON blob (§5.5, §Product-readiness
+        credentials). Callers read-modify-write via get() + this, so the
+        merge logic (e.g. "just add/remove the credentials_encrypted key")
+        lives at the call site, not here."""
+        ...
+
     async def get_or_create(self, target: Target) -> Target:
         existing = await self.get_by_base_url(target.base_url)
         if existing is not None:

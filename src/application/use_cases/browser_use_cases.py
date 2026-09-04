@@ -22,6 +22,7 @@ from src.infrastructure.database.repositories.task_repository import SqlAlchemyT
 from src.infrastructure.database.repositories.task_run_repository import SqlAlchemyTaskRunRepository
 from src.infrastructure.proxy.manager import ProxyManager
 from src.infrastructure.resilience.circuit_breaker import CircuitBreakerRegistry, CircuitOpenError, default_registry
+from src.infrastructure.security.encryption import decrypt_json
 from src.shared.retry import compute_backoff
 
 logger = structlog.get_logger(__name__)
@@ -90,7 +91,14 @@ class RunBrowserSessionUseCase:
         task_run = await self._task_run_repo.create(TaskRun(task_id=task.id, proxy_id=proxy.id if proxy else None))
         await self._task_run_repo.mark_running(task_run.id, datetime.now(timezone.utc))
 
-        result, attempts = await self._run_with_resilience(target.base_url, target.id, proxy, take_screenshot)
+        # §Product-readiness — dashboard-managed credentials (never in code/.env).
+        # Decrypted here, held only in this local variable, passed straight
+        # through to the engine; never logged, never persisted anywhere.
+        credentials, login_selectors = self._decrypt_target_credentials(target)
+
+        result, attempts = await self._run_with_resilience(
+            target.base_url, target.id, proxy, take_screenshot, credentials, login_selectors
+        )
         task_run.retry_count = attempts - 1  # attempts includes the first try
 
         if proxy is not None and self._proxy_manager is not None:
@@ -131,8 +139,33 @@ class RunBrowserSessionUseCase:
         await self._task_run_repo.complete(task_run, sessions, metrics)
         return task_run
 
+    @staticmethod
+    def _decrypt_target_credentials(target: Target) -> tuple[dict | None, dict | None]:
+        """Reads `target.config.credentials_encrypted` (set via
+        PATCH /api/targets/{id}/credentials, §Product-readiness), decrypts it
+        if present. Never raises on a missing/absent key — most targets won't
+        have credentials at all, and that's the normal case, not an error."""
+        config = target.config or {}
+        token = config.get("credentials_encrypted")
+        if not token:
+            return None, None
+        try:
+            credentials = decrypt_json(token)
+        except Exception:
+            # Deliberately no exception detail in the log — see auto_login.py
+            # for the same reasoning (never risk a secret in a log line).
+            logger.warning("target_credentials_decrypt_failed", target_id=str(target.id))
+            return None, None
+        return credentials, config.get("login_selectors")
+
     async def _run_with_resilience(
-        self, url: str, target_id: uuid.UUID, proxy, take_screenshot: bool
+        self,
+        url: str,
+        target_id: uuid.UUID,
+        proxy,
+        take_screenshot: bool,
+        credentials: dict | None = None,
+        login_selectors: dict | None = None,
     ) -> tuple[BrowserRunResult, int]:
         """Retry with exponential backoff+jitter (§7), gated by a circuit
         breaker per target and (if used) per proxy — a target/proxy that's
@@ -155,7 +188,13 @@ class RunBrowserSessionUseCase:
                 logger.warning("browser_session_skipped_circuit_open", url=url, attempt=attempt, error=str(exc))
                 return last_result, attempt
 
-            result = await self._engine.run_session(url, proxy=proxy, take_screenshot=take_screenshot)
+            result = await self._engine.run_session(
+                url,
+                proxy=proxy,
+                credentials=credentials,
+                login_selectors=login_selectors,
+                take_screenshot=take_screenshot,
+            )
             last_result = result
 
             if result.success:

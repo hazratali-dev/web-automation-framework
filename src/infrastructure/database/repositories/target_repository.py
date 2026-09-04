@@ -51,6 +51,13 @@ class SqlAlchemyTargetRepository(TargetRepository):
         row = result.scalars().first()
         return _to_entity(row) if row else None
 
+    async def update_config(self, target_id: uuid.UUID, config: dict) -> None:
+        row = await self._session.get(TargetModel, target_id)
+        if row is None:
+            raise ValueError(f"Target {target_id} not found")
+        row.config = config
+        await self._session.commit()
+
     async def get_or_create(self, target: Target) -> Target:
         """Overrides the ABC's naive check-then-act default: concurrent
         visitor-batch sessions (§Phase 4) can race here, both seeing "not
