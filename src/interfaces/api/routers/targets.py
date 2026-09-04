@@ -88,12 +88,14 @@ async def set_target_credentials(
     so credentials are never echoed back either (§8)."""
     use_case = SetTargetCredentialsUseCase(SqlAlchemyTargetRepository(db))
     try:
-        await use_case.execute(target_id, body.email, body.password)
+        await use_case.execute(target_id, body.email, body.password, body.login_type)
     except ValueError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found") from None
 
     # action/resource only — never the email/password (§8).
-    await SqlAlchemyAuditLogRepository(db).add(action="set_target_credentials", resource=f"target:{target_id}")
+    await SqlAlchemyAuditLogRepository(db).add(
+        action="set_target_credentials", resource=f"target:{target_id}", extra={"login_type": body.login_type}
+    )
 
 
 @router.delete("/{target_id}/credentials", status_code=status.HTTP_204_NO_CONTENT)

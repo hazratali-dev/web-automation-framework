@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { api } from "../api";
-import type { Target } from "../types";
+import type { LoginType, Target } from "../types";
 
 export function CredentialsForm({ target, onChanged }: { target: Target; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
+  const [loginType, setLoginType] = useState<LoginType>("email_password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -14,7 +15,7 @@ export function CredentialsForm({ target, onChanged }: { target: Target; onChang
     setBusy(true);
     setError(null);
     try {
-      await api.setCredentials(target.id, email, password);
+      await api.setCredentials(target.id, loginType === "single_password" ? null : email, password, loginType);
       setEmail("");
       setPassword("");
       setOpen(false);
@@ -55,12 +56,18 @@ export function CredentialsForm({ target, onChanged }: { target: Target; onChang
 
       {open && (
         <form onSubmit={handleSave} className="form-row form-row-compact">
-          <input
-            placeholder="Login email/username"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
+          <select value={loginType} onChange={(e) => setLoginType(e.target.value as LoginType)}>
+            <option value="email_password">Email + Password</option>
+            <option value="single_password">Single Password (Shopify/cPanel)</option>
+          </select>
+          {loginType === "email_password" && (
+            <input
+              placeholder="Login email/username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          )}
           <input
             placeholder="Password"
             type="password"

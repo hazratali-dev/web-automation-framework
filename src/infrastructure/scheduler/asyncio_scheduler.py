@@ -50,17 +50,30 @@ class AsyncioScheduler(SchedulerPort):
             self._scheduler.remove_job(str(stale_id))
         removed = self._scheduled_task_ids - current_ids
 
+        added = 0
         for task in tasks:
+            try:
+                trigger = CronTrigger.from_crontab(task.schedule_cron)
+            except ValueError:
+                # A malformed schedule_cron must never take the whole app
+                # down on startup/sync — skip just this one task and keep
+                # going. (The API also validates on create/update now, so
+                # this is a defense-in-depth backstop for bad data that got
+                # in some other way — e.g. a direct DB edit.)
+                logger.warning("invalid_schedule_cron_skipped", task_id=str(task.id), schedule_cron=task.schedule_cron)
+                current_ids.discard(task.id)
+                continue
             self._scheduler.add_job(
                 self._trigger,
-                CronTrigger.from_crontab(task.schedule_cron),
+                trigger,
                 id=str(task.id),
                 args=[task.id],
                 replace_existing=True,  # picks up a changed schedule_cron too
             )
+            added += 1
 
         self._scheduled_task_ids = current_ids
-        logger.info("scheduler_synced", scheduled=len(current_ids), removed=len(removed))
+        logger.info("scheduler_synced", scheduled=added, removed=len(removed))
 
     async def _trigger(self, task_id: uuid.UUID) -> None:
         # Re-check status fresh — it may have been paused after this job was

@@ -23,6 +23,7 @@ DEFAULT_SUBMIT_SELECTORS = [
     'input[type="submit"]',
     'button:has-text("Log in")',
     'button:has-text("Sign in")',
+    'button:has-text("Enter")',  # Shopify storefront password page
 ]
 
 
@@ -39,30 +40,47 @@ async def _find_selector(page, candidates: list[str | None]) -> str | None:
 
 
 async def auto_login(page, credentials: dict, selectors: dict | None = None) -> bool:
-    """Tries a per-target selector override first (`target.config.
-    login_selectors`), then a handful of common login-form heuristics.
-    Returns True if it found a form and submitted it, False if it couldn't
-    find matching fields — a missing/absent login form is not treated as an
-    error, since not every target actually needs a login (§Product-readiness
-    point 3: "যদি না থাকে, তাহলে কোনো অ্যাকশন নেবে না")."""
+    """Recognizes two form shapes (§Product-readiness — Shopify storefront /
+    cPanel-style single-password pages don't have an email field at all):
+
+    - email + password — the common case.
+    - password only — no email field is looked for (or filled) at all.
+
+    Which one applies is decided by *live DOM inspection*, not by trusting
+    `credentials["login_type"]` blindly: if that key says "single_password",
+    the email field is skipped even if one happens to exist (explicit
+    dashboard setting wins); otherwise, if no email field can be found on
+    the page, it degrades to password-only automatically rather than giving
+    up — a stored "email_password" setting on a page that turns out to be
+    password-only shouldn't just silently fail to log in.
+
+    Returns True if it found a password field and submitted, False if it
+    couldn't (no password field at all is the only hard failure — a missing
+    login form isn't an error, §Product-readiness point 3)."""
     selectors = selectors or {}
+    login_type = credentials.get("login_type", "email_password")
 
-    email_selector = await _find_selector(page, [selectors.get("email_selector"), *DEFAULT_EMAIL_SELECTORS])
-    password_selector = await _find_selector(
-        page, [selectors.get("password_selector"), *DEFAULT_PASSWORD_SELECTORS]
-    )
-
-    if not email_selector or not password_selector:
-        logger.warning(
-            "auto_login_fields_not_found",
-            email_field_found=bool(email_selector),
-            password_field_found=bool(password_selector),
-        )
+    password_selector = await _find_selector(page, [selectors.get("password_selector"), *DEFAULT_PASSWORD_SELECTORS])
+    if not password_selector:
+        logger.warning("auto_login_fields_not_found", password_field_found=False)
         return False
 
+    email_selector = None
+    if login_type != "single_password":
+        email_selector = await _find_selector(page, [selectors.get("email_selector"), *DEFAULT_EMAIL_SELECTORS])
+
+    fill_email = bool(email_selector and credentials.get("email"))
+    logger.info(
+        "auto_login_form_detected",
+        mode="email_password" if fill_email else "single_password",
+        email_field_found=bool(email_selector),
+    )
+
     try:
-        await human_type(page, email_selector, credentials["email"])
-        await think_time(0.2, 0.6)
+        if fill_email:
+            await human_type(page, email_selector, credentials["email"])
+            await think_time(0.2, 0.6)
+
         await human_type(page, password_selector, credentials["password"])
         await think_time(0.2, 0.6)
 

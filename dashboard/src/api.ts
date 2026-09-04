@@ -1,4 +1,4 @@
-import type { Proxy, RuntimeConfigItem, Target, Task, TaskRun } from "./types";
+import type { LoginType, Proxy, RuntimeConfigItem, Target, Task, TaskRun } from "./types";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
@@ -19,10 +19,10 @@ export const api = {
   listTargets: () => request<Target[]>("/api/targets"),
   createTarget: (body: { name: string; base_url: string; target_type: string }) =>
     request<Target>("/api/targets", { method: "POST", body: JSON.stringify(body) }),
-  setCredentials: (targetId: string, email: string, password: string) =>
+  setCredentials: (targetId: string, email: string | null, password: string, loginType: LoginType) =>
     request<void>(`/api/targets/${targetId}/credentials`, {
       method: "PATCH",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, login_type: loginType }),
     }),
   deleteCredentials: (targetId: string) =>
     request<void>(`/api/targets/${targetId}/credentials`, { method: "DELETE" }),

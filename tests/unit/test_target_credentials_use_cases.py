@@ -52,7 +52,19 @@ async def test_set_credentials_stores_an_encrypted_blob_not_plaintext(repo, targ
     stored = target.config[CREDENTIALS_CONFIG_KEY]
     assert "hunter2" not in stored
     assert "user@example.com" not in stored
-    assert decrypt_json(stored) == {"email": "user@example.com", "password": "hunter2"}
+    assert decrypt_json(stored) == {
+        "email": "user@example.com",
+        "password": "hunter2",
+        "login_type": "email_password",
+    }
+
+
+async def test_set_credentials_single_password_mode_ignores_email(repo, target):
+    """Shopify storefront / cPanel-style forms — no email field at all."""
+    await SetTargetCredentialsUseCase(repo).execute(target.id, None, "shop123", login_type="single_password")
+
+    stored = decrypt_json(target.config[CREDENTIALS_CONFIG_KEY])
+    assert stored == {"email": None, "password": "shop123", "login_type": "single_password"}
 
 
 async def test_set_credentials_preserves_other_config_keys(repo, target):

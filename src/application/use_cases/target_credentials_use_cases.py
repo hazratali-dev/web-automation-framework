@@ -8,19 +8,29 @@ CREDENTIALS_CONFIG_KEY = "credentials_encrypted"
 
 class SetTargetCredentialsUseCase:
     """§Product-readiness — dashboard-managed login credentials, never in
-    code/.env. The whole {"email", "password"} object is encrypted as one
-    opaque token before it ever touches `targets.config` (§8)."""
+    code/.env. The whole {"email", "password", "login_type"} object is
+    encrypted as one opaque token before it ever touches `targets.config`
+    (§8). `login_type="single_password"` covers Shopify-storefront/cPanel-
+    style forms with no email field — `email` is ignored in that case."""
 
     def __init__(self, target_repo: TargetRepository) -> None:
         self._target_repo = target_repo
 
-    async def execute(self, target_id: uuid.UUID, email: str, password: str) -> None:
+    async def execute(
+        self,
+        target_id: uuid.UUID,
+        email: str | None,
+        password: str,
+        login_type: str = "email_password",
+    ) -> None:
         target = await self._target_repo.get(target_id)
         if target is None:
             raise ValueError(f"Target {target_id} not found")
 
         config = dict(target.config or {})
-        config[CREDENTIALS_CONFIG_KEY] = encrypt_json({"email": email, "password": password})
+        config[CREDENTIALS_CONFIG_KEY] = encrypt_json(
+            {"email": email, "password": password, "login_type": login_type}
+        )
         await self._target_repo.update_config(target_id, config)
 
 

@@ -1,3 +1,5 @@
+export type LoginType = "email_password" | "single_password";
+
 export interface Target {
   id: string;
   name: string;
