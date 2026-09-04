@@ -38,6 +38,28 @@ class ProxyManager:
         active_proxies = await self._repository.list_active()
         return select_proxy(active_proxies, strategy or "round_robin")
 
+    async def select_proxy_with_secret(self) -> Proxy | None:
+        """Like select_proxy(), but with the password decrypted onto the
+        entity — needed by anything that actually connects through the proxy
+        (Browser Engine, §5.2)."""
+        selected = await self.select_proxy()
+        if selected is None:
+            return None
+        return await self._repository.get_with_secret(selected.id)
+
+    async def record_result(self, proxy_id, *, success: bool, latency_ms: int | None = None) -> None:
+        """Lets callers outside the periodic health-check sweep (e.g. a real
+        task run through the proxy, §5.2) also feed back into the same
+        success/failure counters that drive auto-deactivation."""
+        full_proxy = await self._repository.get_with_secret(proxy_id)
+        if full_proxy is None:
+            return
+        if success:
+            full_proxy.record_success(latency_ms or 0)
+        else:
+            full_proxy.record_failure(deactivate_after=DEACTIVATE_AFTER_CONSECUTIVE_FAILURES)
+        await self._repository.update(full_proxy)
+
     async def run_health_check_cycle(self) -> dict[str, int]:
         """Probes every proxy — active ones (to catch newly-dead proxies) and
         inactive ones (self-healing re-test, §5.1). Returns a small summary
