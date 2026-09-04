@@ -61,4 +61,10 @@ export interface StatusSnapshot {
   success: number;
   failed: number;
   total: number;
+  running_task_run_ids: string[];
+}
+
+export interface PreviewFrame {
+  active: boolean;
+  image?: string;
 }

@@ -51,3 +51,8 @@ export function statusWebSocketUrl(): string {
   const wsBase = BASE_URL.replace(/^http/, "ws");
   return `${wsBase}/ws/status`;
 }
+
+export function previewWebSocketUrl(taskRunId: string): string {
+  const wsBase = BASE_URL.replace(/^http/, "ws");
+  return `${wsBase}/ws/preview/${taskRunId}`;
+}

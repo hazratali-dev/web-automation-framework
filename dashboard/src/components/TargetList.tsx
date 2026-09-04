@@ -19,8 +19,8 @@ export function TargetList({ refreshKey }: { refreshKey: number }) {
 
   return (
     <section className="panel">
-      <h2>টার্গেট তালিকা</h2>
-      {targets.length === 0 && <p className="muted">এখনো কোনো টার্গেট যোগ করা হয়নি।</p>}
+      <h2>Targets</h2>
+      {targets.length === 0 && <p className="muted">No targets added yet.</p>}
       <ul className="target-list">
         {targets.map((target) => (
           <li key={target.id} className="target-card">
@@ -38,7 +38,7 @@ export function TargetList({ refreshKey }: { refreshKey: number }) {
               <TaskPanel target={target} />
             ) : (
               <button type="button" className="link-button" onClick={() => setExpandedId(target.id)}>
-                টাস্ক দেখুন / যোগ করুন
+                View / Add Tasks
               </button>
             )}
           </li>

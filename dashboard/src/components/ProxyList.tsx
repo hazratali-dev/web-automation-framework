@@ -12,15 +12,15 @@ export function ProxyList() {
   if (proxies.length === 0) {
     return (
       <section className="panel">
-        <h2>প্রক্সি পুল</h2>
-        <p className="muted">কোনো প্রক্সি যোগ করা হয়নি (CLI/Phase 2 দিয়ে যোগ করুন)।</p>
+        <h2>Proxy Pool</h2>
+        <p className="muted">No proxies added yet (add via CLI/Phase 2).</p>
       </section>
     );
   }
 
   return (
     <section className="panel">
-      <h2>প্রক্সি পুল</h2>
+      <h2>Proxy Pool</h2>
       <table className="proxy-table">
         <thead>
           <tr>

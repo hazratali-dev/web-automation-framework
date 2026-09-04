@@ -43,14 +43,14 @@ export function CredentialsForm({ target, onChanged }: { target: Target; onChang
   return (
     <div className="credentials-block">
       <span className={`badge ${target.has_credentials ? "badge-ok" : "badge-muted"}`}>
-        {target.has_credentials ? "ক্রেডেনশিয়াল সেট করা আছে" : "কোনো ক্রেডেনশিয়াল নেই"}
+        {target.has_credentials ? "Credentials set" : "No credentials set"}
       </span>
       <button type="button" className="link-button" onClick={() => setOpen((o) => !o)}>
-        {open ? "বাতিল" : target.has_credentials ? "পরিবর্তন করুন" : "সেট করুন"}
+        {open ? "Cancel" : target.has_credentials ? "Change" : "Set"}
       </button>
       {target.has_credentials && (
         <button type="button" className="link-button link-danger" onClick={handleDelete} disabled={busy}>
-          মুছে ফেলুন
+          Remove
         </button>
       )}
 

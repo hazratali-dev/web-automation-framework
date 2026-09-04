@@ -26,10 +26,10 @@ export function TargetForm({ onCreated }: { onCreated: () => void }) {
 
   return (
     <section className="panel">
-      <h2>নতুন টার্গেট যোগ করুন</h2>
+      <h2>Add New Target</h2>
       <form onSubmit={handleSubmit} className="form-row">
         <input
-          placeholder="নাম (যেমন: My Website)"
+          placeholder="Name (e.g. My Website)"
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
@@ -46,7 +46,7 @@ export function TargetForm({ onCreated }: { onCreated: () => void }) {
           <option value="competitor">competitor</option>
         </select>
         <button type="submit" disabled={busy}>
-          {busy ? "যোগ হচ্ছে..." : "Add Target"}
+          {busy ? "Adding..." : "Add Target"}
         </button>
       </form>
       {error && <p className="error">{error}</p>}

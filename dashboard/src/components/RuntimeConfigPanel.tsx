@@ -27,11 +27,12 @@ export function RuntimeConfigPanel() {
   const concurrency = items.find((i) => i.key === "max_concurrent_browsers");
   const strategy = items.find((i) => i.key === "proxy_strategy");
   const timeout = items.find((i) => i.key === "default_timeout_seconds");
+  const headless = items.find((i) => i.key === "headless");
 
   return (
     <section className="panel">
-      <h2>রানটাইম কনফিগারেশন</h2>
-      <p className="muted">রিস্টার্ট ছাড়াই পরবর্তী ব্যাচ/সিলেকশনে প্রতিফলিত হয় (§5.6)।</p>
+      <h2>Runtime Configuration</h2>
+      <p className="muted">Takes effect on the next batch/selection, no restart needed (§5.6).</p>
       <div className="config-row">
         <label>
           max_concurrent_browsers
@@ -66,7 +67,22 @@ export function RuntimeConfigPanel() {
             onBlur={(e) => handleChange("default_timeout_seconds", e.target.value)}
           />
         </label>
+        <label>
+          headless (browser window)
+          <select
+            key={headless?.value ?? "false"}
+            defaultValue={headless?.value ?? "false"}
+            disabled={busyKey === "headless"}
+            onChange={(e) => handleChange("headless", e.target.value)}
+          >
+            <option value="false">false — window visible</option>
+            <option value="true">true — hidden</option>
+          </select>
+        </label>
       </div>
+      <p className="muted small">
+        Changing headless restarts the browser process — it applies as soon as no session is currently running.
+      </p>
     </section>
   );
 }

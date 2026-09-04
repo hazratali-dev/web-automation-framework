@@ -10,6 +10,7 @@ from src.domain.entities.session import BrowserSession
 from src.domain.entities.target import Target
 from src.domain.entities.task import Task
 from src.domain.entities.task_run import TaskRun
+from src.domain.interfaces.preview_store_port import PreviewStorePort
 from src.domain.interfaces.status_store_port import StatusStorePort
 from src.domain.interfaces.target_repository import TargetRepository
 from src.domain.interfaces.task_repository import TaskRepository
@@ -48,6 +49,7 @@ class RunBrowserSessionUseCase:
         *,
         circuit_registry: CircuitBreakerRegistry | None = None,
         status_store: StatusStorePort | None = None,
+        preview_store: PreviewStorePort | None = None,
         max_retries: int = 2,
         retry_base_delay: float = 1.0,
     ) -> None:
@@ -58,6 +60,7 @@ class RunBrowserSessionUseCase:
         self._proxy_manager = proxy_manager
         self._circuit_registry = circuit_registry or default_registry
         self._status_store = status_store
+        self._preview_store = preview_store
         self._max_retries = max_retries
         self._retry_base_delay = retry_base_delay
 
@@ -119,7 +122,7 @@ class RunBrowserSessionUseCase:
         credentials, login_selectors = self._decrypt_target_credentials(target)
 
         result, attempts = await self._run_with_resilience(
-            target.base_url, target.id, proxy, take_screenshot, credentials, login_selectors
+            target.base_url, target.id, proxy, take_screenshot, credentials, login_selectors, task_run.id
         )
         task_run.retry_count = attempts - 1  # attempts includes the first try
 
@@ -190,6 +193,7 @@ class RunBrowserSessionUseCase:
         take_screenshot: bool,
         credentials: dict | None = None,
         login_selectors: dict | None = None,
+        task_run_id: uuid.UUID | None = None,
     ) -> tuple[BrowserRunResult, int]:
         """Retry with exponential backoff+jitter (§7), gated by a circuit
         breaker per target and (if used) per proxy — a target/proxy that's
@@ -218,6 +222,8 @@ class RunBrowserSessionUseCase:
                 credentials=credentials,
                 login_selectors=login_selectors,
                 take_screenshot=take_screenshot,
+                task_run_id=task_run_id,
+                preview_store=self._preview_store,
             )
             last_result = result
 
@@ -263,6 +269,7 @@ def make_task_execution_handler(
     session_factory: Callable,
     circuit_registry: CircuitBreakerRegistry | None = None,
     status_store: StatusStorePort | None = None,
+    preview_store: PreviewStorePort | None = None,
 ) -> TaskHandler:
     """Wires a TaskRunnerPort.submit()-compatible handler (§5.3): given a
     task_id, open a fresh DB session, run it through RunBrowserSessionUseCase,
@@ -281,6 +288,7 @@ def make_task_execution_handler(
                 proxy_manager=proxy_manager,
                 circuit_registry=circuit_registry,
                 status_store=status_store,
+                preview_store=preview_store,
             )
             task_run = await use_case.execute_for_task(task_id)
             logger.info("scheduled_task_executed", task_id=str(task_id), status=task_run.status)

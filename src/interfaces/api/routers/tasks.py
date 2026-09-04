@@ -144,11 +144,12 @@ async def simulate_visitors(
         state.session_factory,
         circuit_registry=state.circuit_registry,
         status_store=state.status_store,
+        preview_store=state.preview_store,
     )
 
     async def _run() -> None:
         try:
-            await use_case.execute(url=target.base_url, total_visitors=count, use_proxy=False)
+            await use_case.execute_for_task(task_id, total_visitors=count, use_proxy=False)
         except Exception:
             logger.exception("simulate_visitors_background_task_failed", task_id=str(task_id))
 

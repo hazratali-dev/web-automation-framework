@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 from contextlib import asynccontextmanager
 
 import structlog
@@ -7,7 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.application.use_cases.browser_use_cases import make_task_execution_handler
 from src.config.settings import get_settings
 from src.infrastructure.browser.engine import BrowserEngine
+from src.infrastructure.browser.headless_watcher import watch_headless_config
+from src.infrastructure.config.runtime_config_service import DbRuntimeConfigService
 from src.infrastructure.database.session import AsyncSessionLocal
+from src.infrastructure.live_preview.memory_preview_store import MemoryPreviewStore
 from src.infrastructure.monitoring.logging_setup import configure_logging
 from src.infrastructure.resilience.circuit_breaker import CircuitBreakerRegistry
 from src.infrastructure.scheduler.asyncio_scheduler import AsyncioScheduler
@@ -23,22 +28,37 @@ configure_logging(settings.app_env, settings.log_level)
 logger = structlog.get_logger(__name__)
 
 
+async def _initial_headless_value() -> bool:
+    """Reads runtime_config.headless once at startup so the engine launches
+    with the dashboard's last-set preference instead of always defaulting
+    (§UI-update); the headless_watcher background task keeps it in sync
+    after that."""
+    async with AsyncSessionLocal() as session:
+        value = await DbRuntimeConfigService(session).get("headless", "false")
+    return (value or "false").strip().lower() in ("1", "true", "yes", "on")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """§5.5 — the whole framework runs in this one uvicorn process (§Appendix
     A): the BrowserEngine, the asyncio task_runner/scheduler from Phase 4, and
-    the in-memory status store all start here once and live on app.state for
-    every request/WebSocket handler to share."""
+    the in-memory status/preview stores all start here once and live on
+    app.state for every request/WebSocket handler to share."""
     logger.info("app_starting", app_env=settings.app_env, database_url=settings.database_url)
 
-    engine = BrowserEngine(headless=True)
+    engine = BrowserEngine(headless=await _initial_headless_value())
     await engine.start()
 
     status_store = MemoryStatusStore()
+    preview_store = MemoryPreviewStore()
     circuit_registry = CircuitBreakerRegistry()
 
     handler = make_task_execution_handler(
-        engine, AsyncSessionLocal, circuit_registry=circuit_registry, status_store=status_store
+        engine,
+        AsyncSessionLocal,
+        circuit_registry=circuit_registry,
+        status_store=status_store,
+        preview_store=preview_store,
     )
     task_runner = AsyncioTaskRunner(handler)
     await task_runner.start()
@@ -46,8 +66,11 @@ async def lifespan(app: FastAPI):
     scheduler = AsyncioScheduler(AsyncSessionLocal, task_runner)
     await scheduler.start()
 
+    headless_watcher_task = asyncio.create_task(watch_headless_config(engine, AsyncSessionLocal))
+
     app.state.engine = engine
     app.state.status_store = status_store
+    app.state.preview_store = preview_store
     app.state.circuit_registry = circuit_registry
     app.state.task_runner = task_runner
     app.state.scheduler = scheduler
@@ -56,6 +79,9 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    headless_watcher_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await headless_watcher_task
     await app.state.background_tasks.cancel_all()
     await scheduler.stop()
     await task_runner.stop()

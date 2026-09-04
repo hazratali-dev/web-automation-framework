@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -8,6 +9,7 @@ import structlog
 from playwright.async_api import async_playwright
 
 from src.domain.entities.proxy import Proxy
+from src.domain.interfaces.preview_store_port import PreviewStorePort
 from src.infrastructure.browser.auto_login import auto_login
 from src.infrastructure.browser.behaviors.scroll import human_scroll, think_time
 from src.infrastructure.browser.fingerprint import Fingerprint, random_fingerprint
@@ -18,6 +20,8 @@ logger = structlog.get_logger(__name__)
 
 DEFAULT_MAX_CONCURRENT_BROWSERS = 5  # Phase 3: hardcoded. Phase 4: runtime_config-driven (§5.2).
 DEFAULT_TIMEOUT_SECONDS = 30.0
+DEFAULT_HEADLESS = False  # user explicitly wants the window visible by default (§UI-update)
+PREVIEW_CAPTURE_INTERVAL_SECONDS = 3.0
 
 
 @dataclass
@@ -44,12 +48,36 @@ class BrowserEngine:
     shared Semaphore(N) so no more than N contexts run concurrently (§5.2,
     §Appendix A.2 — N=5 hardcoded here in Phase 3, dynamic from Phase 4)."""
 
-    def __init__(self, max_concurrent: int = DEFAULT_MAX_CONCURRENT_BROWSERS, headless: bool = True) -> None:
+    def __init__(self, max_concurrent: int = DEFAULT_MAX_CONCURRENT_BROWSERS, headless: bool = DEFAULT_HEADLESS) -> None:
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._current_concurrency = max_concurrent
         self._headless = headless
         self._playwright = None
         self._browser = None
+        self._restart_lock = asyncio.Lock()
+
+    async def set_headless(self, headless: bool) -> None:
+        """§UI-update — dashboard-toggleable, but Playwright can't flip an
+        already-launched browser between headless/headed; the *process* has
+        to be relaunched. Only does that when the engine is currently idle
+        (semaphore fully available, i.e. no session mid-flight) — a session
+        holding a permit is holding a live `page`/`context` from the OLD
+        browser process, and closing that out from under it would break it.
+        If busy, this is a no-op for now; it gets retried (see
+        infrastructure/browser/headless_watcher.py) until it lands in an
+        idle window."""
+        if headless == self._headless:
+            return
+        async with self._restart_lock:
+            if headless == self._headless:
+                return  # lost a race with another caller while awaiting the lock
+            if self._semaphore._value != self._current_concurrency:
+                logger.info("browser_engine_headless_change_deferred", requested=headless)
+                return
+            logger.info("browser_engine_restarting_for_headless_change", headless=headless)
+            await self.stop()
+            self._headless = headless
+            await self.start()
 
     def set_concurrency(self, max_concurrent: int) -> None:
         """Phase 4 (§5.2, §5.6): swaps in a brand-new Semaphore(N). Sessions
@@ -93,6 +121,8 @@ class BrowserEngine:
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         take_screenshot: bool = True,
         screenshot_dir: str = "screenshots",
+        task_run_id: uuid.UUID | None = None,
+        preview_store: PreviewStorePort | None = None,
     ) -> BrowserRunResult:
         """Lifecycle (§5.2): semaphore acquire -> context create -> navigate
         (human-like) -> auto-login if credentials given -> metrics capture ->
@@ -103,7 +133,12 @@ class BrowserEngine:
         `credentials` (already-decrypted {"email", "password"}) and
         `login_selectors` come from the caller (§Product-readiness) — this
         method never touches the database itself, and never logs either
-        dict's contents."""
+        dict's contents.
+
+        `task_run_id`+`preview_store` (§Live-preview, both optional) turn on
+        a background loop that pushes a fresh screenshot into the store every
+        ~3s while this session runs, so a dashboard sidebar can show what the
+        browser is doing live via /ws/preview/{task_run_id}."""
         if self._browser is None:
             raise RuntimeError("BrowserEngine.start() must be called before run_session()")
 
@@ -111,6 +146,7 @@ class BrowserEngine:
             started = time.monotonic()
             fingerprint = random_fingerprint()
             context = None
+            preview_task: asyncio.Task | None = None
             try:
                 context_kwargs: dict = {
                     "viewport": fingerprint.viewport,
@@ -126,6 +162,10 @@ class BrowserEngine:
                 await install_metrics_observer(context)
 
                 page = await context.new_page()
+
+                if task_run_id is not None and preview_store is not None:
+                    preview_task = asyncio.create_task(self._capture_preview_loop(page, task_run_id, preview_store))
+
                 await think_time(0.3, 1.0)
                 await page.goto(url, timeout=timeout_seconds * 1000, wait_until="load")
 
@@ -163,5 +203,23 @@ class BrowserEngine:
                     duration_ms=duration_ms,
                 )
             finally:
+                if preview_task is not None:
+                    preview_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await preview_task
+                    await preview_store.clear(task_run_id)
                 if context is not None:
                     await context.close()
+
+    @staticmethod
+    async def _capture_preview_loop(page, task_run_id: uuid.UUID, preview_store: PreviewStorePort) -> None:
+        """Runs until cancelled by run_session()'s finally block. Swallows
+        its own errors (e.g. a screenshot mid-navigation) — a preview glitch
+        must never take down the actual browsing session."""
+        while True:
+            try:
+                image_bytes = await page.screenshot(type="jpeg", quality=50)
+                await preview_store.set(task_run_id, image_bytes)
+            except Exception:
+                pass
+            await asyncio.sleep(PREVIEW_CAPTURE_INTERVAL_SECONDS)
